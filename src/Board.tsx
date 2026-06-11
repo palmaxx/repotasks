@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Entry, Project } from "./types";
 import {
+  addEntry,
   confirmDialog,
   deleteEntry,
   importProject,
@@ -16,29 +17,41 @@ import {
   updateEntry,
 } from "./lib/api";
 
-const MAX_ITEMS = 7;
+const LAST_PROJECT_KEY = "repotasks:board:lastProject";
 
 export default function Board() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [notes, setNotes] = useState<Record<string, Entry[]>>({});
+  const [selectedId, setSelectedId] = useState(
+    () => localStorage.getItem(LAST_PROJECT_KEY) ?? "",
+  );
+  const [newText, setNewText] = useState("");
+  const [newIsTodo, setNewIsTodo] = useState(true);
+  const [search, setSearch] = useState("");
   const [busy, setBusy] = useState(false);
+  const [adding, setAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   async function refresh() {
     try {
       const list = await listProjects();
       setProjects(list);
       const pairs = await Promise.all(
-        list.map(async (p) => [p.id, await readNotes(p.id)] as const),
+        list.map(async (project) => [project.id, await readNotes(project.id)] as const),
       );
       setNotes(Object.fromEntries(pairs));
+      setSelectedId((current) => {
+        if (current && list.some((project) => project.id === current)) return current;
+        const stored = localStorage.getItem(LAST_PROJECT_KEY);
+        if (stored && list.some((project) => project.id === stored)) return stored;
+        return list[0]?.id ?? "";
+      });
     } catch (e) {
       setError(String(e));
     }
   }
 
-  // Refresh on mount and whenever the board regains focus (picks up edits made
-  // to NOTES.md in an external editor, or via the quick-capture window).
   useEffect(() => {
     void refresh();
     const win = getCurrentWindow();
@@ -49,6 +62,10 @@ export default function Board() {
       void unlisten.then((f) => f());
     };
   }, []);
+
+  useEffect(() => {
+    if (selectedId) localStorage.setItem(LAST_PROJECT_KEY, selectedId);
+  }, [selectedId]);
 
   async function guard(fn: () => Promise<unknown>) {
     setError(null);
@@ -64,203 +81,428 @@ export default function Board() {
     const dir = await pickFolder();
     if (!dir) return;
     setBusy(true);
-    await guard(() => importProject(dir));
-    setBusy(false);
+    setError(null);
+    try {
+      const project = await importProject(dir);
+      setSelectedId(project.id);
+      await refresh();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
   }
 
-  async function onRemove(p: Project) {
+  async function onRemove(project: Project) {
     const ok = await confirmDialog(
-      `Remove "${p.name}" from RepoTasks? Its files stay on disk.`,
+      `Remove "${project.name}" from RepoTasks? Its files stay on disk.`,
     );
-    if (ok) await guard(() => removeProject(p.id));
+    if (ok) await guard(() => removeProject(project.id));
   }
 
-  const ordered = [...projects].sort(
-    (a, b) => Number(b.pinned) - Number(a.pinned),
+  async function onAddEntry(project: Project) {
+    const value = newText.trim();
+    if (!value || adding) return;
+    setAdding(true);
+    setError(null);
+    try {
+      await addEntry(project.id, value, newIsTodo);
+      setNewText("");
+      await refresh();
+      inputRef.current?.focus();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setAdding(false);
+    }
+  }
+
+  const orderedProjects = useMemo(
+    () =>
+      [...projects].sort(
+        (a, b) =>
+          Number(b.pinned) - Number(a.pinned) || a.name.localeCompare(b.name),
+      ),
+    [projects],
   );
 
+  const selectedProject = useMemo(
+    () => orderedProjects.find((project) => project.id === selectedId) ?? orderedProjects[0],
+    [orderedProjects, selectedId],
+  );
+
+  const selectedEntries = selectedProject ? notes[selectedProject.id] ?? [] : [];
+  const visibleEntries = filterEntries(selectedEntries, search);
+  const stats = getStats(selectedEntries);
+
   return (
-    <main className="board">
-      <header className="board__header">
-        <h1 className="board__brand">RepoTasks</h1>
-        <div className="board__actions">
-          <button className="btn" onClick={() => void refresh()} title="Reload notes">
-            Refresh
-          </button>
-          <button className="btn btn--primary" onClick={onImport} disabled={busy}>
-            {busy ? "Importing…" : "+ Import project"}
-          </button>
-        </div>
-      </header>
+    <main className="sticky-app">
+      {error && <div className="error-strip">{error}</div>}
 
-      {error && <div className="board__error">{error}</div>}
-
-      {projects.length === 0 ? (
-        <section className="board__empty">
-          <p>No projects yet.</p>
-          <p className="muted">
-            Import a repo to auto-create its <code>NOTES.md</code>, then capture
-            ideas from anywhere with{" "}
-            <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Space</kbd>.
-          </p>
+      {!selectedProject ? (
+        <section className="empty-note">
+          <div className="empty-note__title">RepoTasks</div>
+          <p>No repos yet.</p>
+          <button className="solid-btn" type="button" onClick={onImport} disabled={busy}>
+            {busy ? "Importing" : "Import repo"}
+          </button>
         </section>
       ) : (
-        <section className="cards">
-          {ordered.map((p) => (
-            <ProjectCard
-              key={p.id}
-              project={p}
-              entries={notes[p.id] ?? []}
-              onTogglePin={() => guard(() => setPinned(p.id, !p.pinned))}
-              onToggle={(line) => guard(() => toggleTodo(p.id, line))}
-              onUpdate={(line, text) => guard(() => updateEntry(p.id, line, text))}
-              onDelete={(line) => guard(() => deleteEntry(p.id, line))}
-              onOpenFolder={() => void openFolder(p.id).catch((e) => setError(String(e)))}
-              onOpenEditor={() => void openInEditor(p.id).catch((e) => setError(String(e)))}
-              onRemove={() => onRemove(p)}
+        <>
+          <header className="topbar">
+            <select
+              className="repo-picker"
+              value={selectedProject.id}
+              onChange={(event) => setSelectedId(event.target.value)}
+              title={selectedProject.path}
+            >
+              {orderedProjects.map((project) => (
+                <option key={project.id} value={project.id}>
+                  {project.name}
+                </option>
+              ))}
+            </select>
+
+            <div className="topbar__actions">
+              <button
+                className={selectedProject.pinned ? "icon-btn icon-btn--on" : "icon-btn"}
+                type="button"
+                onClick={() =>
+                  guard(() => setPinned(selectedProject.id, !selectedProject.pinned))
+                }
+                title={selectedProject.pinned ? "Unpin" : "Pin"}
+                aria-label={selectedProject.pinned ? "Unpin" : "Pin"}
+              >
+                <Icon name="star" />
+              </button>
+              <button
+                className="icon-btn"
+                type="button"
+                onClick={() => void refresh()}
+                title="Refresh"
+                aria-label="Refresh"
+              >
+                <Icon name="refresh" />
+              </button>
+              <button
+                className="icon-btn"
+                type="button"
+                onClick={onImport}
+                disabled={busy}
+                title="Import repo"
+                aria-label="Import repo"
+              >
+                <Icon name="plus" />
+              </button>
+              <details className="more-menu">
+                <summary title="More actions" aria-label="More actions">
+                  <Icon name="more" />
+                </summary>
+                <div className="more-menu__panel">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void openFolder(selectedProject.id).catch((e) => setError(String(e)))
+                    }
+                  >
+                    Folder
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      void openInEditor(selectedProject.id).catch((e) => setError(String(e)))
+                    }
+                  >
+                    NOTES.md
+                  </button>
+                  <button
+                    className="danger-text"
+                    type="button"
+                    onClick={() => void onRemove(selectedProject)}
+                  >
+                    Remove
+                  </button>
+                </div>
+              </details>
+            </div>
+          </header>
+
+          <section className="quick-add" aria-label="Add entry">
+            <button
+              className={newIsTodo ? "todo-toggle todo-toggle--on" : "todo-toggle"}
+              type="button"
+              onClick={() => setNewIsTodo((value) => !value)}
+              title={newIsTodo ? "Add as todo" : "Add as note"}
+              aria-label={newIsTodo ? "Add as todo" : "Add as note"}
             />
-          ))}
-        </section>
+            <input
+              ref={inputRef}
+              value={newText}
+              onChange={(event) => setNewText(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void onAddEntry(selectedProject);
+                }
+              }}
+              placeholder="Add item"
+            />
+            <button
+              className="add-btn"
+              type="button"
+              disabled={!newText.trim() || adding}
+              onClick={() => void onAddEntry(selectedProject)}
+              title="Add"
+              aria-label="Add"
+            >
+              <Icon name="plus" />
+            </button>
+          </section>
+
+          <section className="meta-row">
+            <span>
+              {stats.open} open / {stats.done} done / {stats.notes} notes
+            </span>
+            <input
+              type="search"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search"
+              aria-label="Search entries"
+            />
+          </section>
+
+          <TaskList
+            entries={visibleEntries}
+            totalEntries={selectedEntries.length}
+            searching={Boolean(search.trim())}
+            onToggle={(line) => guard(() => toggleTodo(selectedProject.id, line))}
+            onUpdate={(line, text) =>
+              guard(() => updateEntry(selectedProject.id, line, text))
+            }
+            onDelete={(line) => guard(() => deleteEntry(selectedProject.id, line))}
+          />
+        </>
       )}
     </main>
   );
 }
 
-interface CardProps {
-  project: Project;
+interface TaskListProps {
   entries: Entry[];
-  onTogglePin: () => void;
+  totalEntries: number;
+  searching: boolean;
   onToggle: (line: number) => void;
   onUpdate: (line: number, text: string) => void;
   onDelete: (line: number) => void;
-  onOpenFolder: () => void;
-  onOpenEditor: () => void;
-  onRemove: () => void;
 }
 
-function ProjectCard({
-  project,
+function TaskList({
   entries,
-  onTogglePin,
+  totalEntries,
+  searching,
   onToggle,
   onUpdate,
   onDelete,
-  onOpenFolder,
-  onOpenEditor,
-  onRemove,
-}: CardProps) {
-  const [editingLine, setEditingLine] = useState<number | null>(null);
-  const [draft, setDraft] = useState("");
-
-  const openTodos = entries.filter((e) => e.kind === "todo" && !e.done);
-  const doneTodos = entries.filter((e) => e.kind === "todo" && e.done);
-  const noteItems = entries.filter((e) => e.kind === "note");
-  const ordered = [...openTodos, ...doneTodos, ...noteItems];
-  const shown = ordered.slice(0, MAX_ITEMS);
-  const overflow = ordered.length - shown.length;
-
-  function startEdit(e: Entry) {
-    setEditingLine(e.line);
-    setDraft(e.text);
-  }
-  function commitEdit(line: number) {
-    const value = draft.trim();
-    setEditingLine(null);
-    if (value) onUpdate(line, value);
+}: TaskListProps) {
+  if (entries.length === 0) {
+    return (
+      <div className="empty-list">
+        {searching ? "No matching entries" : totalEntries === 0 ? "Nothing here yet" : "No entries"}
+      </div>
+    );
   }
 
   return (
-    <article className="card" style={{ background: project.color }}>
-      <div className="card__head">
-        <span className="card__title" title={project.path}>
-          {project.name}
-        </span>
-        <button
-          className={project.pinned ? "card__pin card__pin--on" : "card__pin"}
-          onClick={onTogglePin}
-          title={project.pinned ? "Unpin" : "Pin"}
-          type="button"
-        >
-          ★
-        </button>
+    <ul className="task-list">
+      {entries.map((entry) => (
+        <EntryRow
+          key={entry.line}
+          entry={entry}
+          onToggle={() => onToggle(entry.line)}
+          onUpdate={(text) => onUpdate(entry.line, text)}
+          onDelete={() => onDelete(entry.line)}
+        />
+      ))}
+    </ul>
+  );
+}
+
+interface EntryRowProps {
+  entry: Entry;
+  onToggle: () => void;
+  onUpdate: (text: string) => void;
+  onDelete: () => void;
+}
+
+function EntryRow({ entry, onToggle, onUpdate, onDelete }: EntryRowProps) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(entry.text);
+
+  useEffect(() => {
+    setDraft(entry.text);
+  }, [entry.text]);
+
+  function cancel() {
+    setDraft(entry.text);
+    setEditing(false);
+  }
+
+  function save() {
+    const value = draft.trim();
+    if (!value) return;
+    setEditing(false);
+    if (value !== entry.text) onUpdate(value);
+  }
+
+  return (
+    <li className={entry.done ? "task-row task-row--done" : "task-row"}>
+      <div className="task-row__check">
+        {entry.kind === "todo" ? (
+          <input
+            type="checkbox"
+            checked={entry.done}
+            onChange={onToggle}
+            aria-label={entry.done ? "Mark open" : "Mark done"}
+          />
+        ) : (
+          <span title="Note" aria-label="Note" />
+        )}
       </div>
 
-      {ordered.length === 0 ? (
-        <div className="card__empty">No notes yet</div>
-      ) : (
-        <ul className="card__list">
-          {shown.map((e) => (
-            <li
-              className={e.done ? "card__item card__item--done" : "card__item"}
-              key={e.line}
+      <div className="task-row__body">
+        {editing ? (
+          <div className="row-edit">
+            <input
+              value={draft}
+              autoFocus
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  save();
+                } else if (event.key === "Escape") {
+                  cancel();
+                }
+              }}
+            />
+            <button type="button" onClick={save} title="Save" aria-label="Save">
+              <Icon name="check" />
+            </button>
+            <button type="button" onClick={cancel} title="Cancel" aria-label="Cancel">
+              <Icon name="x" />
+            </button>
+          </div>
+        ) : (
+          <>
+            <button
+              className="task-row__text"
+              type="button"
+              onClick={() => setEditing(true)}
+              title="Edit"
             >
-              {e.kind === "todo" ? (
-                <input
-                  type="checkbox"
-                  className="card__cb"
-                  checked={e.done}
-                  onChange={() => onToggle(e.line)}
-                />
-              ) : (
-                <span className="card__bullet">•</span>
-              )}
-
-              {editingLine === e.line ? (
-                <input
-                  className="card__edit"
-                  autoFocus
-                  value={draft}
-                  onChange={(ev) => setDraft(ev.target.value)}
-                  onBlur={() => setEditingLine(null)}
-                  onKeyDown={(ev) => {
-                    if (ev.key === "Enter") {
-                      ev.preventDefault();
-                      commitEdit(e.line);
-                    } else if (ev.key === "Escape") {
-                      setEditingLine(null);
-                    }
-                  }}
-                />
-              ) : (
-                <span
-                  className="card__text"
-                  title="Double-click to edit"
-                  onDoubleClick={() => startEdit(e)}
-                >
-                  {e.text}
-                </span>
-              )}
-
-              <button
-                className="card__del"
-                title="Delete"
-                type="button"
-                onClick={() => onDelete(e.line)}
-              >
-                ×
-              </button>
-            </li>
-          ))}
-          {overflow > 0 && <li className="card__more">+{overflow} more…</li>}
-        </ul>
-      )}
-
-      <div className="card__footer">
-        <span className="card__counts">
-          {openTodos.length} open · {doneTodos.length} done · {noteItems.length} notes
-        </span>
-        <span className="card__links">
-          <button className="link" type="button" onClick={onOpenFolder}>
-            Folder
-          </button>
-          <button className="link" type="button" onClick={onOpenEditor}>
-            NOTES.md
-          </button>
-          <button className="link link--danger" type="button" onClick={onRemove}>
-            Remove
-          </button>
-        </span>
+              {entry.text}
+            </button>
+            {entry.timestamp && (
+              <span className="task-row__time">{formatTimestamp(entry.timestamp)}</span>
+            )}
+          </>
+        )}
       </div>
-    </article>
+
+      {!editing && (
+        <div className="task-row__actions">
+          <button type="button" onClick={() => setEditing(true)} title="Edit" aria-label="Edit">
+            <Icon name="edit" />
+          </button>
+          <button type="button" onClick={onDelete} title="Delete" aria-label="Delete">
+            <Icon name="trash" />
+          </button>
+        </div>
+      )}
+    </li>
+  );
+}
+
+interface EntryStats {
+  open: number;
+  done: number;
+  notes: number;
+}
+
+function getStats(entries: Entry[]): EntryStats {
+  return entries.reduce(
+    (stats, entry) => {
+      if (entry.kind === "note") stats.notes += 1;
+      else if (entry.done) stats.done += 1;
+      else stats.open += 1;
+      return stats;
+    },
+    { open: 0, done: 0, notes: 0 },
+  );
+}
+
+function filterEntries(entries: Entry[], query: string): Entry[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) return entries;
+  return entries.filter((entry) =>
+    `${entry.text} ${entry.timestamp ?? ""}`.toLowerCase().includes(needle),
+  );
+}
+
+function formatTimestamp(timestamp: string): string {
+  const [datePart, timePart] = timestamp.split(" ");
+  if (!datePart || !timePart) return timestamp;
+
+  const today = new Date();
+  const todayKey = toDateKey(today);
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  const yesterdayKey = toDateKey(yesterday);
+
+  if (datePart === todayKey) return timePart;
+  if (datePart === yesterdayKey) return `Y ${timePart}`;
+
+  const parsed = new Date(`${datePart}T${timePart}:00`);
+  if (Number.isNaN(parsed.getTime())) return timestamp;
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+  }).format(parsed);
+}
+
+function toDateKey(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+type IconName =
+  | "check"
+  | "edit"
+  | "more"
+  | "plus"
+  | "refresh"
+  | "star"
+  | "trash"
+  | "x";
+
+function Icon({ name }: { name: IconName }) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+      {name === "plus" && <path d="M12 5v14M5 12h14" />}
+      {name === "refresh" && (
+        <path d="M18 8a7 7 0 1 0 1 6M18 8V4m0 4h-4" />
+      )}
+      {name === "star" && (
+        <path d="m12 4 2.3 4.7 5.2.8-3.8 3.7.9 5.2-4.6-2.5-4.6 2.5.9-5.2-3.8-3.7 5.2-.8L12 4Z" />
+      )}
+      {name === "more" && <path d="M6 12h.01M12 12h.01M18 12h.01" />}
+      {name === "edit" && <path d="m5 17-.8 3 3-.8L18 8.4 15.6 6 5 16.6Z" />}
+      {name === "trash" && <path d="M6 7h12M9 7V5h6v2m-8 3 1 9h8l1-9" />}
+      {name === "check" && <path d="m5 12 4 4L19 6" />}
+      {name === "x" && <path d="m7 7 10 10M17 7 7 17" />}
+    </svg>
   );
 }
