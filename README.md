@@ -26,7 +26,7 @@ Ensure you have [Node.js](https://nodejs.org/), [pnpm](https://pnpm.io/), and [R
 
 1. Clone the repository and navigate into it:
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/palmaxx/repotasks.git
    cd repotasks
    ```
 
