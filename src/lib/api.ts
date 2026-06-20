@@ -46,3 +46,15 @@ export async function pickFolder(): Promise<string | null> {
   });
   return typeof result === "string" ? result : null;
 }
+
+export interface GitSyncStatus {
+  is_git: boolean;
+  has_remote: boolean;
+  ahead: number;
+  behind: number;
+  has_uncommitted_notes: boolean;
+}
+
+export const checkGitSyncStatus = (projectId: string) =>
+  invoke<GitSyncStatus>("check_git_sync_status", { projectId });
+

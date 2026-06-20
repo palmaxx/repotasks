@@ -93,7 +93,7 @@ pub fn run() {
                     Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState,
                 };
                 let toggle = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::ALT), Code::Space);
-                let for_handler = toggle.clone();
+                let for_handler = toggle;
                 app.handle().plugin(
                     tauri_plugin_global_shortcut::Builder::new()
                         .with_handler(move |app, scut, event| {
@@ -122,6 +122,7 @@ pub fn run() {
             commands::delete_entry,
             commands::open_folder,
             commands::open_in_editor,
+            commands::check_git_sync_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -129,7 +129,7 @@ pub fn delete_at(content: &str, line: usize) -> Result<String, String> {
 }
 
 fn clean_text(text: &str) -> String {
-    text.trim().replace('\n', " ").replace('\r', " ")
+    text.trim().replace(['\n', '\r'], " ")
 }
 
 fn split_lines(content: &str) -> (Vec<String>, bool) {

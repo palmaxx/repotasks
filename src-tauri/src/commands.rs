@@ -234,6 +234,137 @@ pub fn open_in_editor(app: AppHandle, project_id: String) -> Result<(), String> 
         .map_err(|e| e.to_string())
 }
 
+use std::process::Command;
+
+#[derive(serde::Serialize, Clone, Debug)]
+pub struct GitSyncStatus {
+    pub is_git: bool,
+    pub has_remote: bool,
+    pub ahead: usize,
+    pub behind: usize,
+    pub has_uncommitted_notes: bool,
+}
+
+#[tauri::command]
+pub async fn check_git_sync_status(app: AppHandle, project_id: String) -> Result<GitSyncStatus, String> {
+    let project = find_project(&app, &project_id)?;
+    let path = Path::new(&project.path);
+
+    // 1. Check if it's a git repo
+    let is_git = Command::new("git")
+        .args(["rev-parse", "--is-inside-work-tree"])
+        .current_dir(path)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    if !is_git {
+        return Ok(GitSyncStatus {
+            is_git: false,
+            has_remote: false,
+            ahead: 0,
+            behind: 0,
+            has_uncommitted_notes: false,
+        });
+    }
+
+    // 2. Check if NOTES.md is actually tracked in Git.
+    // If it's not tracked, we shouldn't trigger warnings about sync status.
+    let is_tracked = Command::new("git")
+        .args(["ls-files", "--error-unmatch", NOTE_FILE])
+        .current_dir(path)
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    if !is_tracked {
+        return Ok(GitSyncStatus {
+            is_git: false, // treat it as non-git for sync warning purposes
+            has_remote: false,
+            ahead: 0,
+            behind: 0,
+            has_uncommitted_notes: false,
+        });
+    }
+
+    // 3. Check if a remote exists
+    let has_remote = Command::new("git")
+        .args(["remote"])
+        .current_dir(path)
+        .output()
+        .map(|o| {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            !stdout.trim().is_empty()
+        })
+        .unwrap_or(false);
+
+    if !has_remote {
+        return Ok(GitSyncStatus {
+            is_git: true,
+            has_remote: false,
+            ahead: 0,
+            behind: 0,
+            has_uncommitted_notes: false,
+        });
+    }
+
+    // 4. Check for uncommitted/unstaged changes to NOTES.md
+    let has_uncommitted_notes = Command::new("git")
+        .args(["status", "--porcelain", NOTE_FILE])
+        .current_dir(path)
+        .output()
+        .map(|o| {
+            let stdout = String::from_utf8_lossy(&o.stdout);
+            !stdout.trim().is_empty()
+        })
+        .unwrap_or(false);
+
+    // 5. Fetch from remote in background to update remote tracking branch.
+    // Use GIT_TERMINAL_PROMPT=0 to prevent prompting for credentials.
+    let _ = Command::new("git")
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .args(["fetch", "--quiet"])
+        .current_dir(path)
+        .output();
+
+    // 6. Get ahead/behind count compared to upstream tracking branch
+    let upstream = Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "@{u}"])
+        .current_dir(path)
+        .output()
+        .map(|o| {
+            let s = String::from_utf8_lossy(&o.stdout);
+            s.trim().to_string()
+        })
+        .unwrap_or_default();
+
+    let mut ahead = 0;
+    let mut behind = 0;
+
+    if !upstream.is_empty() && !upstream.contains("@{u}") {
+        if let Ok(o) = Command::new("git")
+            .args(["rev-list", "--left-right", "--count", "HEAD...@{u}"])
+            .current_dir(path)
+            .output()
+        {
+            let s = String::from_utf8_lossy(&o.stdout);
+            let parts: Vec<&str> = s.split_whitespace().collect();
+            if parts.len() == 2 {
+                ahead = parts[0].parse().unwrap_or(0);
+                behind = parts[1].parse().unwrap_or(0);
+            }
+        }
+    }
+
+    Ok(GitSyncStatus {
+        is_git: true,
+        has_remote,
+        ahead,
+        behind,
+        has_uncommitted_notes,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

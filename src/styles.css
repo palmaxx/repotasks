@@ -578,3 +578,63 @@ svg {
     padding-bottom: 4px;
   }
 }
+
+/* ---- Git Sync warnings & settings ---------------------------------------- */
+.sync-warning-bar {
+  flex: 0 0 auto;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.sync-warning-bar--danger {
+  background: #fff0ed;
+  color: var(--danger);
+}
+
+.sync-warning-bar--warning {
+  background: #fff9e6;
+  color: #8c6d00;
+}
+
+.sync-warning-bar--info {
+  background: #f0f7ff;
+  color: #0050b3;
+}
+
+.more-menu__settings-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 11px;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--ink);
+  cursor: pointer;
+  border-top: 1px solid var(--line);
+}
+
+.more-menu__settings-row:hover {
+  background: #f4f0d0;
+}
+
+.more-menu__settings-row input {
+  margin: 0;
+  accent-color: var(--teal);
+}
+
+.more-menu__status-row {
+  min-height: 26px;
+  padding: 5px 11px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  background: rgba(31, 60, 56, 0.05);
+  border-top: 1px dashed var(--line);
+}
+

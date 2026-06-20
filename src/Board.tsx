@@ -3,6 +3,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Entry, Project } from "./types";
 import {
   addEntry,
+  checkGitSyncStatus,
   confirmDialog,
   deleteEntry,
   importProject,
@@ -16,6 +17,7 @@ import {
   toggleTodo,
   updateEntry,
 } from "./lib/api";
+import type { GitSyncStatus } from "./lib/api";
 
 const LAST_PROJECT_KEY = "repotasks:board:lastProject";
 
@@ -33,6 +35,48 @@ export default function Board() {
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const [gitSyncEnabled, setGitSyncEnabled] = useState<boolean>(() => {
+    return localStorage.getItem("repotasks:settings:gitSyncEnabled") !== "false";
+  });
+  const [gitSyncStatus, setGitSyncStatus] = useState<GitSyncStatus | null>(null);
+
+  async function triggerNotification(title: string, body: string) {
+    if (!("Notification" in window)) return;
+    if (Notification.permission === "granted") {
+      new Notification(title, { body });
+    } else if (Notification.permission !== "denied") {
+      const perm = await Notification.requestPermission();
+      if (perm === "granted") {
+        new Notification(title, { body });
+      }
+    }
+  }
+
+  async function checkGit(projectId: string) {
+    if (!gitSyncEnabled) {
+      setGitSyncStatus(null);
+      return;
+    }
+    try {
+      const status = await checkGitSyncStatus(projectId);
+      setGitSyncStatus(status);
+
+      if (status.is_git && status.has_remote && status.behind > 0) {
+        const key = `${projectId}:${status.ahead}:${status.behind}`;
+        const alreadyNotified = localStorage.getItem(`repotasks:notified:${key}`);
+        if (!alreadyNotified) {
+          void triggerNotification(
+            "RepoTasks — Notes out of sync",
+            "Remote changes detected in NOTES.md. Please pull before editing."
+          );
+          localStorage.setItem(`repotasks:notified:${key}`, "true");
+        }
+      }
+    } catch (e) {
+      console.error("Git check failed", e);
+    }
+  }
+
   async function refresh() {
     try {
       const list = await listProjects();
@@ -41,12 +85,19 @@ export default function Board() {
         list.map(async (project) => [project.id, await readNotes(project.id)] as const),
       );
       setNotes(Object.fromEntries(pairs));
-      setSelectedId((current) => {
-        if (current && list.some((project) => project.id === current)) return current;
+
+      let nextId = "";
+      if (selectedId && list.some((project) => project.id === selectedId)) {
+        nextId = selectedId;
+      } else {
         const stored = localStorage.getItem(LAST_PROJECT_KEY);
-        if (stored && list.some((project) => project.id === stored)) return stored;
-        return list[0]?.id ?? "";
-      });
+        nextId = (stored && list.some((project) => project.id === stored)) ? stored : (list[0]?.id ?? "");
+      }
+      setSelectedId(nextId);
+
+      if (nextId && gitSyncEnabled) {
+        void checkGit(nextId);
+      }
     } catch (e) {
       setError(String(e));
     }
@@ -66,6 +117,14 @@ export default function Board() {
   useEffect(() => {
     if (selectedId) localStorage.setItem(LAST_PROJECT_KEY, selectedId);
   }, [selectedId]);
+
+  useEffect(() => {
+    if (selectedId && gitSyncEnabled) {
+      void checkGit(selectedId);
+    } else {
+      setGitSyncStatus(null);
+    }
+  }, [selectedId, gitSyncEnabled]);
 
   async function guard(fn: () => Promise<unknown>) {
     setError(null);
@@ -222,10 +281,66 @@ export default function Board() {
                   >
                     Remove
                   </button>
+                  <label className="more-menu__settings-row">
+                    <input
+                      type="checkbox"
+                      checked={gitSyncEnabled}
+                      onChange={(e) => {
+                        const enabled = e.target.checked;
+                        setGitSyncEnabled(enabled);
+                        localStorage.setItem("repotasks:settings:gitSyncEnabled", String(enabled));
+                      }}
+                    />
+                    Git Sync Check
+                  </label>
+                  {gitSyncEnabled && gitSyncStatus && (
+                    <div className="more-menu__status-row">
+                      {gitSyncStatus.is_git ? (
+                        <>
+                          {gitSyncStatus.has_remote ? (
+                            <>
+                              {gitSyncStatus.behind > 0 && `Behind: ${gitSyncStatus.behind} commit(s)`}
+                              {gitSyncStatus.ahead > 0 && `Ahead: ${gitSyncStatus.ahead} commit(s)`}
+                              {gitSyncStatus.behind === 0 && gitSyncStatus.ahead === 0 && "Git Synced"}
+                            </>
+                          ) : (
+                            "No git remote"
+                          )}
+                        </>
+                      ) : (
+                        "Git sync inactive (untracked NOTES.md)"
+                      )}
+                    </div>
+                  )}
                 </div>
               </details>
             </div>
           </header>
+
+          {gitSyncEnabled && gitSyncStatus && gitSyncStatus.is_git && gitSyncStatus.has_remote && (
+            <>
+              {gitSyncStatus.behind > 0 && gitSyncStatus.has_uncommitted_notes && (
+                <div className="sync-warning-bar sync-warning-bar--danger">
+                  <span>⚠️ <strong>Merge Conflict Risk:</strong> Local changes exist and remote has {gitSyncStatus.behind} new commit(s). Please stash/pull before saving.</span>
+                </div>
+              )}
+              {gitSyncStatus.behind > 0 && !gitSyncStatus.has_uncommitted_notes && (
+                <div className="sync-warning-bar sync-warning-bar--warning">
+                  <span>⚠️ <strong>Out of Sync:</strong> Behind remote by {gitSyncStatus.behind} commit(s). Pull from terminal to sync notes.</span>
+                </div>
+              )}
+              {gitSyncStatus.behind === 0 && gitSyncStatus.ahead > 0 && (
+                <div className="sync-warning-bar sync-warning-bar--info">
+                  <span>ℹ️ <strong>Unpushed changes:</strong> Ahead of remote by {gitSyncStatus.ahead} commit(s). Push to sync.</span>
+                </div>
+              )}
+              {gitSyncStatus.behind === 0 && gitSyncStatus.ahead === 0 && gitSyncStatus.has_uncommitted_notes && (
+                <div className="sync-warning-bar sync-warning-bar--info">
+                  <span>📝 <strong>Local changes:</strong> NOTES.md has unstaged modifications.</span>
+                </div>
+              )}
+            </>
+          )}
 
           <section className="quick-add" aria-label="Add entry">
             <button

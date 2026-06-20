@@ -2,10 +2,8 @@
 name = "repotasks"
 version = "0.1.0"
 description = "Repo-aware quick-capture notes and todos"
-authors = ["you"]
+authors = ["palmaxx"]
 edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary
