@@ -2,7 +2,9 @@
 name = "repotasks"
 version = "0.1.0"
 description = "Repo-aware quick-capture notes and todos"
-authors = ["palmaxx"]
+authors = ["Massimiliano De Palma <depalma.massimiliano@gmail.com>"]
+license = "MIT"
+repository = "https://github.com/palmaxx/repotasks"
 edition = "2021"
 
 [lib]

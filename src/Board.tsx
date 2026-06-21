@@ -24,9 +24,7 @@ const LAST_PROJECT_KEY = "repotasks:board:lastProject";
 export default function Board() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [notes, setNotes] = useState<Record<string, Entry[]>>({});
-  const [selectedId, setSelectedId] = useState(
-    () => localStorage.getItem(LAST_PROJECT_KEY) ?? "",
-  );
+  const [selectedId, setSelectedId] = useState(() => localStorage.getItem(LAST_PROJECT_KEY) ?? "");
   const [newText, setNewText] = useState("");
   const [newIsTodo, setNewIsTodo] = useState(true);
   const [search, setSearch] = useState("");
@@ -67,7 +65,7 @@ export default function Board() {
         if (!alreadyNotified) {
           void triggerNotification(
             "RepoTasks — Notes out of sync",
-            "Remote changes detected in NOTES.md. Please pull before editing."
+            "Remote changes detected in NOTES.md. Please pull before editing.",
           );
           localStorage.setItem(`repotasks:notified:${key}`, "true");
         }
@@ -91,7 +89,8 @@ export default function Board() {
         nextId = selectedId;
       } else {
         const stored = localStorage.getItem(LAST_PROJECT_KEY);
-        nextId = (stored && list.some((project) => project.id === stored)) ? stored : (list[0]?.id ?? "");
+        nextId =
+          stored && list.some((project) => project.id === stored) ? stored : (list[0]?.id ?? "");
       }
       setSelectedId(nextId);
 
@@ -179,8 +178,7 @@ export default function Board() {
   const orderedProjects = useMemo(
     () =>
       [...projects].sort(
-        (a, b) =>
-          Number(b.pinned) - Number(a.pinned) || a.name.localeCompare(b.name),
+        (a, b) => Number(b.pinned) - Number(a.pinned) || a.name.localeCompare(b.name),
       ),
     [projects],
   );
@@ -190,7 +188,7 @@ export default function Board() {
     [orderedProjects, selectedId],
   );
 
-  const selectedEntries = selectedProject ? notes[selectedProject.id] ?? [] : [];
+  const selectedEntries = selectedProject ? (notes[selectedProject.id] ?? []) : [];
   const visibleEntries = filterEntries(selectedEntries, search);
   const stats = getStats(selectedEntries);
 
@@ -226,9 +224,7 @@ export default function Board() {
               <button
                 className={selectedProject.pinned ? "icon-btn icon-btn--on" : "icon-btn"}
                 type="button"
-                onClick={() =>
-                  guard(() => setPinned(selectedProject.id, !selectedProject.pinned))
-                }
+                onClick={() => guard(() => setPinned(selectedProject.id, !selectedProject.pinned))}
                 title={selectedProject.pinned ? "Unpin" : "Pin"}
                 aria-label={selectedProject.pinned ? "Unpin" : "Pin"}
               >
@@ -299,9 +295,12 @@ export default function Board() {
                         <>
                           {gitSyncStatus.has_remote ? (
                             <>
-                              {gitSyncStatus.behind > 0 && `Behind: ${gitSyncStatus.behind} commit(s)`}
+                              {gitSyncStatus.behind > 0 &&
+                                `Behind: ${gitSyncStatus.behind} commit(s)`}
                               {gitSyncStatus.ahead > 0 && `Ahead: ${gitSyncStatus.ahead} commit(s)`}
-                              {gitSyncStatus.behind === 0 && gitSyncStatus.ahead === 0 && "Git Synced"}
+                              {gitSyncStatus.behind === 0 &&
+                                gitSyncStatus.ahead === 0 &&
+                                "Git Synced"}
                             </>
                           ) : (
                             "No git remote"
@@ -321,24 +320,37 @@ export default function Board() {
             <>
               {gitSyncStatus.behind > 0 && gitSyncStatus.has_uncommitted_notes && (
                 <div className="sync-warning-bar sync-warning-bar--danger">
-                  <span>⚠️ <strong>Merge Conflict Risk:</strong> Local changes exist and remote has {gitSyncStatus.behind} new commit(s). Please stash/pull before saving.</span>
+                  <span>
+                    ⚠️ <strong>Merge Conflict Risk:</strong> Local changes exist and remote has{" "}
+                    {gitSyncStatus.behind} new commit(s). Please stash/pull before saving.
+                  </span>
                 </div>
               )}
               {gitSyncStatus.behind > 0 && !gitSyncStatus.has_uncommitted_notes && (
                 <div className="sync-warning-bar sync-warning-bar--warning">
-                  <span>⚠️ <strong>Out of Sync:</strong> Behind remote by {gitSyncStatus.behind} commit(s). Pull from terminal to sync notes.</span>
+                  <span>
+                    ⚠️ <strong>Out of Sync:</strong> Behind remote by {gitSyncStatus.behind}{" "}
+                    commit(s). Pull from terminal to sync notes.
+                  </span>
                 </div>
               )}
               {gitSyncStatus.behind === 0 && gitSyncStatus.ahead > 0 && (
                 <div className="sync-warning-bar sync-warning-bar--info">
-                  <span>ℹ️ <strong>Unpushed changes:</strong> Ahead of remote by {gitSyncStatus.ahead} commit(s). Push to sync.</span>
+                  <span>
+                    ℹ️ <strong>Unpushed changes:</strong> Ahead of remote by {gitSyncStatus.ahead}{" "}
+                    commit(s). Push to sync.
+                  </span>
                 </div>
               )}
-              {gitSyncStatus.behind === 0 && gitSyncStatus.ahead === 0 && gitSyncStatus.has_uncommitted_notes && (
-                <div className="sync-warning-bar sync-warning-bar--info">
-                  <span>📝 <strong>Local changes:</strong> NOTES.md has unstaged modifications.</span>
-                </div>
-              )}
+              {gitSyncStatus.behind === 0 &&
+                gitSyncStatus.ahead === 0 &&
+                gitSyncStatus.has_uncommitted_notes && (
+                  <div className="sync-warning-bar sync-warning-bar--info">
+                    <span>
+                      📝 <strong>Local changes:</strong> NOTES.md has unstaged modifications.
+                    </span>
+                  </div>
+                )}
             </>
           )}
 
@@ -392,9 +404,7 @@ export default function Board() {
             totalEntries={selectedEntries.length}
             searching={Boolean(search.trim())}
             onToggle={(line) => guard(() => toggleTodo(selectedProject.id, line))}
-            onUpdate={(line, text) =>
-              guard(() => updateEntry(selectedProject.id, line, text))
-            }
+            onUpdate={(line, text) => guard(() => updateEntry(selectedProject.id, line, text))}
             onDelete={(line) => guard(() => deleteEntry(selectedProject.id, line))}
           />
         </>
@@ -593,23 +603,13 @@ function toDateKey(date: Date): string {
   return `${year}-${month}-${day}`;
 }
 
-type IconName =
-  | "check"
-  | "edit"
-  | "more"
-  | "plus"
-  | "refresh"
-  | "star"
-  | "trash"
-  | "x";
+type IconName = "check" | "edit" | "more" | "plus" | "refresh" | "star" | "trash" | "x";
 
 function Icon({ name }: { name: IconName }) {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
       {name === "plus" && <path d="M12 5v14M5 12h14" />}
-      {name === "refresh" && (
-        <path d="M18 8a7 7 0 1 0 1 6M18 8V4m0 4h-4" />
-      )}
+      {name === "refresh" && <path d="M18 8a7 7 0 1 0 1 6M18 8V4m0 4h-4" />}
       {name === "star" && (
         <path d="m12 4 2.3 4.7 5.2.8-3.8 3.7.9 5.2-4.6-2.5-4.6 2.5.9-5.2-3.8-3.7 5.2-.8L12 4Z" />
       )}

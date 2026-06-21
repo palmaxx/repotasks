@@ -8,7 +8,13 @@
   --muted: #6f756f;
   --line: rgba(31, 60, 56, 0.24);
   --danger: #b42318;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
 }
 
 * {
@@ -637,4 +643,3 @@ svg {
   background: rgba(31, 60, 56, 0.05);
   border-top: 1px dashed var(--line);
 }
-

@@ -4,17 +4,14 @@ import type { Entry, Project } from "../types";
 
 export const listProjects = () => invoke<Project[]>("list_projects");
 
-export const importProject = (path: string) =>
-  invoke<Project>("import_project", { path });
+export const importProject = (path: string) => invoke<Project>("import_project", { path });
 
-export const removeProject = (id: string) =>
-  invoke<void>("remove_project", { id });
+export const removeProject = (id: string) => invoke<void>("remove_project", { id });
 
 export const addEntry = (projectId: string, text: string, isTodo: boolean) =>
   invoke<void>("add_entry", { projectId, text, isTodo });
 
-export const readNotes = (projectId: string) =>
-  invoke<Entry[]>("read_notes", { projectId });
+export const readNotes = (projectId: string) => invoke<Entry[]>("read_notes", { projectId });
 
 export const setPinned = (id: string, pinned: boolean) =>
   invoke<void>("set_pinned", { id, pinned });
@@ -28,11 +25,9 @@ export const updateEntry = (projectId: string, line: number, text: string) =>
 export const deleteEntry = (projectId: string, line: number) =>
   invoke<void>("delete_entry", { projectId, line });
 
-export const openFolder = (projectId: string) =>
-  invoke<void>("open_folder", { projectId });
+export const openFolder = (projectId: string) => invoke<void>("open_folder", { projectId });
 
-export const openInEditor = (projectId: string) =>
-  invoke<void>("open_in_editor", { projectId });
+export const openInEditor = (projectId: string) => invoke<void>("open_in_editor", { projectId });
 
 export const confirmDialog = (message: string, title = "RepoTasks") =>
   ask(message, { title, kind: "warning" });
@@ -57,4 +52,3 @@ export interface GitSyncStatus {
 
 export const checkGitSyncStatus = (projectId: string) =>
   invoke<GitSyncStatus>("check_git_sync_status", { projectId });
-

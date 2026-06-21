@@ -2,12 +2,19 @@
   "name": "repotasks",
   "private": true,
   "version": "0.1.0",
+  "description": "Repo-aware quick-capture notes and todos",
+  "author": "Massimiliano De Palma <depalma.massimiliano@gmail.com>",
+  "license": "MIT",
+  "repository": "https://github.com/palmaxx/repotasks",
+  "bugs": "https://github.com/palmaxx/repotasks/issues",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
+    "lint": "eslint \"src/**/*.{ts,tsx}\""
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
@@ -17,11 +24,19 @@
     "react-dom": "^19.1.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@tauri-apps/cli": "^2",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
+    "eslint": "^10.5.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.3",
+    "globals": "^17.6.0",
+    "prettier": "^3.8.4",
     "typescript": "~5.8.3",
+    "typescript-eslint": "^8.61.1",
     "vite": "^7.0.4"
   }
 }
