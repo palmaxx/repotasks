@@ -102,11 +102,14 @@ export default function Board() {
     }
   }
 
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
+
   useEffect(() => {
-    void refresh();
+    void refreshRef.current();
     const win = getCurrentWindow();
     const unlisten = win.onFocusChanged(({ payload: focused }) => {
-      if (focused) void refresh();
+      if (focused) void refreshRef.current();
     });
     return () => {
       void unlisten.then((f) => f());
