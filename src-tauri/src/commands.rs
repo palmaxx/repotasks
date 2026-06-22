@@ -320,9 +320,12 @@ pub async fn check_git_sync_status(app: AppHandle, project_id: String) -> Result
         .unwrap_or(false);
 
     // 5. Fetch from remote in background to update remote tracking branch.
-    // Use GIT_TERMINAL_PROMPT=0 to prevent prompting for credentials.
+    // Disable all interactive prompts (terminal and GUI) so it doesn't steal focus.
     let _ = Command::new("git")
         .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GCM_INTERACTIVE", "false")
+        .env("GIT_ASKPASS", "")
+        .env("SSH_ASKPASS", "")
         .args(["fetch", "--quiet"])
         .current_dir(path)
         .output();
