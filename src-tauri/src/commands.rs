@@ -269,6 +269,17 @@ pub fn open_in_editor(app: AppHandle, project_id: String) -> Result<(), String> 
 
 use std::process::Command;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
+fn git_cmd() -> Command {
+    let mut cmd = Command::new("git");
+    cmd.env("GIT_TERMINAL_PROMPT", "0");
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000);
+    cmd
+}
+
 #[derive(serde::Serialize, Clone, Debug)]
 pub struct GitSyncStatus {
     pub is_git: bool,
@@ -283,7 +294,7 @@ pub fn check_git_sync_status_core(config_dir: &Path, project_id: &str) -> Result
     let path = Path::new(&project.path);
 
     // 1. Check if it's a git repo
-    let is_git = Command::new("git")
+    let is_git = git_cmd()
         .args(["rev-parse", "--is-inside-work-tree"])
         .current_dir(path)
         .output()
@@ -319,8 +330,8 @@ pub fn check_git_sync_status_core(config_dir: &Path, project_id: &str) -> Result
         });
     }
 
-    // 3. Check if a remote exists
-    let has_remote = Command::new("git")
+    // 3. Check if it has a remote
+    let has_remote = git_cmd()
         .args(["remote"])
         .current_dir(path)
         .output()
@@ -340,8 +351,8 @@ pub fn check_git_sync_status_core(config_dir: &Path, project_id: &str) -> Result
         });
     }
 
-    // 4. Check for uncommitted/unstaged changes to NOTES.md
-    let has_uncommitted_notes = Command::new("git")
+    // 4. Check for unstaged/uncommitted NOTES.md modifications
+    let has_uncommitted_notes = git_cmd()
         .args(["status", "--porcelain", NOTE_FILE])
         .current_dir(path)
         .output()
@@ -353,7 +364,7 @@ pub fn check_git_sync_status_core(config_dir: &Path, project_id: &str) -> Result
 
     // 5. Fetch from remote in background to update remote tracking branch.
     // Disable all interactive prompts (terminal and GUI) so it doesn't steal focus.
-    let _ = Command::new("git")
+    let _ = git_cmd()
         .env("GIT_TERMINAL_PROMPT", "0")
         .env("GCM_INTERACTIVE", "false")
         .env("GIT_ASKPASS", "")
@@ -363,7 +374,7 @@ pub fn check_git_sync_status_core(config_dir: &Path, project_id: &str) -> Result
         .output();
 
     // 6. Get ahead/behind count compared to upstream tracking branch
-    let upstream = Command::new("git")
+    let upstream = git_cmd()
         .args(["rev-parse", "--abbrev-ref", "@{u}"])
         .current_dir(path)
         .output()
@@ -377,7 +388,7 @@ pub fn check_git_sync_status_core(config_dir: &Path, project_id: &str) -> Result
     let mut behind = 0;
 
     if !upstream.is_empty() && !upstream.contains("@{u}") {
-        if let Ok(o) = Command::new("git")
+        if let Ok(o) = git_cmd()
             .args(["rev-list", "--left-right", "--count", "HEAD...@{u}"])
             .current_dir(path)
             .output()
@@ -409,19 +420,19 @@ pub fn commit_and_push_core(config_dir: &Path, project_id: &str) -> Result<(), S
     let project = find_project(config_dir, project_id)?;
     let path = Path::new(&project.path);
     
-    Command::new("git")
+    git_cmd()
         .args(["add", NOTE_FILE, ".repotasks.json"])
         .current_dir(path)
         .output()
         .map_err(|e| e.to_string())?;
 
-    Command::new("git")
+    git_cmd()
         .args(["commit", "-m", "Repotasks update"])
         .current_dir(path)
         .output()
         .map_err(|e| e.to_string())?;
 
-    let o = Command::new("git")
+    let o = git_cmd()
         .args(["push"])
         .current_dir(path)
         .output()
@@ -443,7 +454,7 @@ pub fn pull_notes_core(config_dir: &Path, project_id: &str) -> Result<(), String
     let project = find_project(config_dir, project_id)?;
     let path = Path::new(&project.path);
 
-    let o = Command::new("git")
+    let o = git_cmd()
         .args(["pull", "--rebase"])
         .current_dir(path)
         .output()
@@ -451,7 +462,7 @@ pub fn pull_notes_core(config_dir: &Path, project_id: &str) -> Result<(), String
 
     if !o.status.success() {
         // Abort the rebase if it fails to prevent locking up the user's repository
-        let _ = Command::new("git").args(["rebase", "--abort"]).current_dir(path).output();
+        let _ = git_cmd().args(["rebase", "--abort"]).current_dir(path).output();
         return Err(String::from_utf8_lossy(&o.stderr).to_string());
     }
 

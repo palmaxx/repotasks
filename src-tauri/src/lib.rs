@@ -55,8 +55,10 @@ pub fn run() {
                             }
                         } else if let Some(rest) = id.strip_prefix("pull:") {
                             if let Ok(config_dir) = commands::get_config_dir(app) {
-                                let _ = commands::pull_notes_core(&config_dir, rest);
-                                // The background task will update the tray on next tick
+                                let project_id = rest.to_string();
+                                std::thread::spawn(move || {
+                                    let _ = commands::pull_notes_core(&config_dir, &project_id);
+                                });
                             }
                         }
                     }
