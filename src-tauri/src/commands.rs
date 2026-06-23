@@ -1,22 +1,49 @@
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tauri_plugin_opener::OpenerExt;
 
 use crate::models::{Entry, Project, RepoConfig};
 use crate::notes;
-use crate::store;
 
 /// Sticky-note palette; new projects cycle through it for visual variety.
 const PALETTE: [&str; 6] = [
     "#ffd966", "#f6a5c0", "#a0d8b3", "#a5c8f6", "#d8b3f6", "#f6c8a0",
 ];
 
-const NOTE_FILE: &str = "NOTES.md";
+pub const NOTE_FILE: &str = "NOTES.md";
+
+pub fn get_config_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path().app_config_dir().map_err(|e| e.to_string())
+}
+
+pub fn projects_file(config_dir: &Path) -> Result<PathBuf, String> {
+    fs::create_dir_all(config_dir).map_err(|e| e.to_string())?;
+    Ok(config_dir.join("projects.json"))
+}
+
+pub fn load_projects(config_dir: &Path) -> Result<Vec<Project>, String> {
+    let path = projects_file(config_dir)?;
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let data = fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    serde_json::from_str(&data).map_err(|e| e.to_string())
+}
+
+pub fn save_projects(config_dir: &Path, projects: &[Project]) -> Result<(), String> {
+    let path = projects_file(config_dir)?;
+    let data = serde_json::to_string_pretty(projects).map_err(|e| e.to_string())?;
+    fs::write(&path, data).map_err(|e| e.to_string())
+}
 
 fn new_id() -> String {
-    uuid::Uuid::new_v4().to_string()
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_nanos()
+        .to_string()
 }
 
 fn now_iso() -> String {
@@ -57,20 +84,20 @@ fn provision_files(
 
 #[tauri::command]
 pub fn list_projects(app: AppHandle) -> Result<Vec<Project>, String> {
-    store::load_projects(&app)
+    load_projects(&get_config_dir(&app)?)
 }
 
 /// Register a folder as a project, provisioning its NOTES.md + .repotasks.json
 /// in place. Idempotent: re-importing a known path returns the existing entry
 /// and never overwrites files that already exist.
 #[tauri::command]
-pub fn import_project(app: AppHandle, path: String) -> Result<Project, String> {
-    let dir = Path::new(&path);
+pub fn import_project_core(config_dir: &Path, path: &str) -> Result<Project, String> {
+    let dir = Path::new(path);
     if !dir.is_dir() {
         return Err(format!("Not a folder: {path}"));
     }
 
-    let mut projects = store::load_projects(&app)?;
+    let mut projects = load_projects(config_dir)?;
     let abs = dir.to_string_lossy().to_string();
     if let Some(existing) = projects.iter().find(|p| p.path == abs) {
         return Ok(existing.clone());
@@ -95,40 +122,36 @@ pub fn import_project(app: AppHandle, path: String) -> Result<Project, String> {
         added_at: now,
     };
     projects.push(project.clone());
-    store::save_projects(&app, &projects)?;
+    save_projects(config_dir, &projects)?;
     Ok(project)
+}
+
+#[tauri::command]
+pub fn import_project(app: AppHandle, path: String) -> Result<Project, String> {
+    import_project_core(&get_config_dir(&app)?, &path)
 }
 
 /// Forget a project from the central index. Files in the repo are left intact.
 #[tauri::command]
 pub fn remove_project(app: AppHandle, id: String) -> Result<(), String> {
-    let mut projects = store::load_projects(&app)?;
+    let config_dir = get_config_dir(&app)?;
+    let mut projects = load_projects(&config_dir)?;
     let before = projects.len();
     projects.retain(|p| p.id != id);
     if projects.len() == before {
         return Err(format!("No project with id {id}"));
     }
-    store::save_projects(&app, &projects)
+    save_projects(&config_dir, &projects)
 }
 
 /// Append a note/todo under the project's `## Inbox`, stamped with local time.
-#[tauri::command]
-pub fn add_entry(
-    app: AppHandle,
-    project_id: String,
-    text: String,
-    is_todo: bool,
-) -> Result<(), String> {
+pub fn add_entry_core(config_dir: &Path, project_id: &str, text: &str, is_todo: bool) -> Result<(), String> {
     let text = text.trim();
     if text.is_empty() {
         return Err("Cannot add an empty note".into());
     }
 
-    let projects = store::load_projects(&app)?;
-    let project = projects
-        .iter()
-        .find(|p| p.id == project_id)
-        .ok_or_else(|| format!("No project with id {project_id}"))?;
+    let project = find_project(config_dir, project_id)?;
 
     let note_path = Path::new(&project.path).join(NOTE_FILE);
     let content = if note_path.exists() {
@@ -143,14 +166,14 @@ pub fn add_entry(
     fs::write(&note_path, updated).map_err(|e| e.to_string())
 }
 
-/// Parse a project's NOTES.md into structured notes/todos for the board.
 #[tauri::command]
-pub fn read_notes(app: AppHandle, project_id: String) -> Result<Vec<Entry>, String> {
-    let projects = store::load_projects(&app)?;
-    let project = projects
-        .iter()
-        .find(|p| p.id == project_id)
-        .ok_or_else(|| format!("No project with id {project_id}"))?;
+pub fn add_entry(app: AppHandle, project_id: String, text: String, is_todo: bool) -> Result<(), String> {
+    add_entry_core(&get_config_dir(&app)?, &project_id, &text, is_todo)
+}
+
+/// Parse a project's NOTES.md into structured notes/todos for the board.
+pub fn read_notes_core(config_dir: &Path, project_id: &str) -> Result<Vec<Entry>, String> {
+    let project = find_project(config_dir, project_id)?;
 
     let note_path = Path::new(&project.path).join(NOTE_FILE);
     if !note_path.exists() {
@@ -160,42 +183,52 @@ pub fn read_notes(app: AppHandle, project_id: String) -> Result<Vec<Entry>, Stri
     Ok(notes::parse_notes(&content))
 }
 
+#[tauri::command]
+pub fn read_notes(app: AppHandle, project_id: String) -> Result<Vec<Entry>, String> {
+    read_notes_core(&get_config_dir(&app)?, &project_id)
+}
+
 /// Pin or unpin a project (pinned cards sort first on the board).
 #[tauri::command]
 pub fn set_pinned(app: AppHandle, id: String, pinned: bool) -> Result<(), String> {
-    let mut projects = store::load_projects(&app)?;
+    let config_dir = get_config_dir(&app)?;
+    let mut projects = load_projects(&config_dir)?;
     let project = projects
         .iter_mut()
         .find(|p| p.id == id)
         .ok_or_else(|| format!("No project with id {id}"))?;
     project.pinned = pinned;
-    store::save_projects(&app, &projects)
+    save_projects(&config_dir, &projects)
 }
 
 /// Resolve a project's NOTES.md, apply a pure rewrite, and persist it.
 fn rewrite_notes(
-    app: &AppHandle,
+    config_dir: &Path,
     project_id: &str,
     f: impl FnOnce(&str) -> Result<String, String>,
 ) -> Result<(), String> {
-    let project = find_project(app, project_id)?;
+    let project = find_project(config_dir, project_id)?;
     let note_path = Path::new(&project.path).join(NOTE_FILE);
     let content = fs::read_to_string(&note_path).map_err(|e| e.to_string())?;
     let updated = f(&content)?;
     fs::write(&note_path, updated).map_err(|e| e.to_string())
 }
 
-fn find_project(app: &AppHandle, project_id: &str) -> Result<Project, String> {
-    store::load_projects(app)?
+pub fn find_project(config_dir: &Path, project_id: &str) -> Result<Project, String> {
+    load_projects(config_dir)?
         .into_iter()
         .find(|p| p.id == project_id)
         .ok_or_else(|| format!("No project with id {project_id}"))
 }
 
 /// Flip a todo's checkbox at the given 0-based file line.
+pub fn toggle_todo_core(config_dir: &Path, project_id: &str, line: usize) -> Result<(), String> {
+    rewrite_notes(config_dir, project_id, |c| notes::toggle_todo_at(c, line))
+}
+
 #[tauri::command]
 pub fn toggle_todo(app: AppHandle, project_id: String, line: usize) -> Result<(), String> {
-    rewrite_notes(&app, &project_id, |c| notes::toggle_todo_at(c, line))
+    toggle_todo_core(&get_config_dir(&app)?, &project_id, line)
 }
 
 /// Replace the text of an entry at the given line (keeps marker + timestamp).
@@ -206,19 +239,19 @@ pub fn update_entry(
     line: usize,
     text: String,
 ) -> Result<(), String> {
-    rewrite_notes(&app, &project_id, |c| notes::update_text_at(c, line, &text))
+    rewrite_notes(&get_config_dir(&app)?, &project_id, |c| notes::update_text_at(c, line, &text))
 }
 
 /// Delete the entry at the given line.
 #[tauri::command]
 pub fn delete_entry(app: AppHandle, project_id: String, line: usize) -> Result<(), String> {
-    rewrite_notes(&app, &project_id, |c| notes::delete_at(c, line))
+    rewrite_notes(&get_config_dir(&app)?, &project_id, |c| notes::delete_at(c, line))
 }
 
 /// Open the repo folder in the OS file manager.
 #[tauri::command]
 pub fn open_folder(app: AppHandle, project_id: String) -> Result<(), String> {
-    let project = find_project(&app, &project_id)?;
+    let project = find_project(&get_config_dir(&app)?, &project_id)?;
     app.opener()
         .open_path(project.path, None::<&str>)
         .map_err(|e| e.to_string())
@@ -227,7 +260,7 @@ pub fn open_folder(app: AppHandle, project_id: String) -> Result<(), String> {
 /// Open the project's NOTES.md with the OS default handler.
 #[tauri::command]
 pub fn open_in_editor(app: AppHandle, project_id: String) -> Result<(), String> {
-    let project = find_project(&app, &project_id)?;
+    let project = find_project(&get_config_dir(&app)?, &project_id)?;
     let note_path = Path::new(&project.path).join(NOTE_FILE);
     app.opener()
         .open_path(note_path.to_string_lossy().to_string(), None::<&str>)
@@ -245,9 +278,8 @@ pub struct GitSyncStatus {
     pub has_uncommitted_notes: bool,
 }
 
-#[tauri::command]
-pub async fn check_git_sync_status(app: AppHandle, project_id: String) -> Result<GitSyncStatus, String> {
-    let project = find_project(&app, &project_id)?;
+pub fn check_git_sync_status_core(config_dir: &Path, project_id: &str) -> Result<GitSyncStatus, String> {
+    let project = find_project(config_dir, project_id)?;
     let path = Path::new(&project.path);
 
     // 1. Check if it's a git repo
@@ -366,6 +398,69 @@ pub async fn check_git_sync_status(app: AppHandle, project_id: String) -> Result
         behind,
         has_uncommitted_notes,
     })
+}
+
+#[tauri::command]
+pub async fn check_git_sync_status(app: AppHandle, project_id: String) -> Result<GitSyncStatus, String> {
+    check_git_sync_status_core(&get_config_dir(&app)?, &project_id)
+}
+
+pub fn commit_and_push_core(config_dir: &Path, project_id: &str) -> Result<(), String> {
+    let project = find_project(config_dir, project_id)?;
+    let path = Path::new(&project.path);
+    
+    Command::new("git")
+        .args(["add", NOTE_FILE, ".repotasks.json"])
+        .current_dir(path)
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    Command::new("git")
+        .args(["commit", "-m", "Repotasks update"])
+        .current_dir(path)
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    let o = Command::new("git")
+        .args(["push"])
+        .current_dir(path)
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if !o.status.success() {
+        return Err(String::from_utf8_lossy(&o.stderr).to_string());
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn commit_and_push(app: AppHandle, project_id: String) -> Result<(), String> {
+    commit_and_push_core(&get_config_dir(&app)?, &project_id)
+}
+
+pub fn pull_notes_core(config_dir: &Path, project_id: &str) -> Result<(), String> {
+    let project = find_project(config_dir, project_id)?;
+    let path = Path::new(&project.path);
+
+    let o = Command::new("git")
+        .args(["pull", "--rebase"])
+        .current_dir(path)
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if !o.status.success() {
+        // Abort the rebase if it fails to prevent locking up the user's repository
+        let _ = Command::new("git").args(["rebase", "--abort"]).current_dir(path).output();
+        return Err(String::from_utf8_lossy(&o.stderr).to_string());
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub fn pull_notes(app: AppHandle, project_id: String) -> Result<(), String> {
+    pull_notes_core(&get_config_dir(&app)?, &project_id)
 }
 
 #[cfg(test)]

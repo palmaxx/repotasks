@@ -6,6 +6,7 @@ authors = ["Massimiliano De Palma <depalma.massimiliano@gmail.com>"]
 license = "MIT"
 repository = "https://github.com/palmaxx/repotasks"
 edition = "2021"
+default-run = "repotasks"
 
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary
@@ -24,5 +25,11 @@ tauri-plugin-global-shortcut = "2"
 tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-uuid = { version = "1", features = ["v4"] }
 chrono = "0.4"
+clap = { version = "4", features = ["derive"] }
+directories = "5.0"
+tauri-plugin-notification = "2.3.3"
+
+[[bin]]
+name = "rtasks"
+path = "src/bin/cli.rs"

@@ -16,6 +16,8 @@ import {
   setPinned,
   toggleTodo,
   updateEntry,
+  commitAndPush,
+  pullNotes,
 } from "./lib/api";
 import type { GitSyncStatus } from "./lib/api";
 
@@ -38,17 +40,7 @@ export default function Board() {
   });
   const [gitSyncStatus, setGitSyncStatus] = useState<GitSyncStatus | null>(null);
 
-  async function triggerNotification(title: string, body: string) {
-    if (!("Notification" in window)) return;
-    if (Notification.permission === "granted") {
-      new Notification(title, { body });
-    } else if (Notification.permission !== "denied") {
-      const perm = await Notification.requestPermission();
-      if (perm === "granted") {
-        new Notification(title, { body });
-      }
-    }
-  }
+// Notifications are now handled by the rust background task
 
   async function checkGit(projectId: string) {
     if (!gitSyncEnabled) {
@@ -60,15 +52,7 @@ export default function Board() {
       setGitSyncStatus(status);
 
       if (status.is_git && status.has_remote && status.behind > 0) {
-        const key = `${projectId}:${status.ahead}:${status.behind}`;
-        const alreadyNotified = localStorage.getItem(`repotasks:notified:${key}`);
-        if (!alreadyNotified) {
-          void triggerNotification(
-            "RepoTasks — Notes out of sync",
-            "Remote changes detected in NOTES.md. Please pull before editing.",
-          );
-          localStorage.setItem(`repotasks:notified:${key}`, "true");
-        }
+        // Notification logic moved to rust backend
       }
     } catch (e) {
       console.error("Git check failed", e);
@@ -272,6 +256,26 @@ export default function Board() {
                     }
                   >
                     NOTES.md
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void pullNotes(selectedProject.id)
+                        .then(() => refresh())
+                        .catch((e) => setError(String(e)));
+                    }}
+                  >
+                    Pull Notes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void commitAndPush(selectedProject.id)
+                        .then(() => checkGit())
+                        .catch((e) => setError(String(e)));
+                    }}
+                  >
+                    Commit & Push
                   </button>
                   <button
                     className="danger-text"

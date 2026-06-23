@@ -9,7 +9,8 @@ RepoTasks is a desktop application built with Tauri, React, and TypeScript. It p
 - **Main Board**: A dedicated board view to manage all your imported repositories. Pin your favorites, filter tasks, and view quick stats (open tasks, completed tasks, notes).
 - **System Tray Integration**: Runs quietly in the background with a system tray icon, ensuring quick access to the board and capture views without keeping windows open.
 - **Quick Actions**: One-click actions to open a project's folder, edit the `NOTES.md` file directly in your preferred editor, or stop tracking a project without deleting its notes.
-- **Git Sync Warnings & Checking**: Automatically detects if your local `NOTES.md` file is out of sync with its remote tracking branch. Displays visually distinct warning banners for merge-conflict risks, out-of-sync remote commits, unpushed local changes, or unstaged modifications. It fires system/OS notifications when remote updates are detected, and can be easily toggled on/off under each project's "More Actions" menu.
+- **Git Sync & Actions**: Automatically detects if your local `NOTES.md` file is out of sync with its remote tracking branch. Displays visually distinct warning banners for merge-conflict risks, unpushed local changes, or unstaged modifications. Easily push, commit, or pull notes directly via the "More Actions" menu.
+- **CLI Helper**: A standalone CLI binary (`rtasks.exe`) that lets you manage projects directly from your terminal. Easily add projects (`rtasks add .`), write notes (`rtasks note "text"`), toggle todos (`rtasks toggle <line>`), check sync status (`rtasks status`), and perform git push/pull actions without ever opening the GUI!
 
 ## Tech Stack
 

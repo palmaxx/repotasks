@@ -52,3 +52,9 @@ export interface GitSyncStatus {
 
 export const checkGitSyncStatus = (projectId: string) =>
   invoke<GitSyncStatus>("check_git_sync_status", { projectId });
+
+export const commitAndPush = (projectId: string) =>
+  invoke<void>("commit_and_push", { projectId });
+
+export const pullNotes = (projectId: string) =>
+  invoke<void>("pull_notes", { projectId });
