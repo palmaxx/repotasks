@@ -1,49 +1,128 @@
 # RepoTasks
 
-RepoTasks is a desktop application built with Tauri, React, and TypeScript. It provides a simple, repo-aware quick-capture interface for managing your notes and todos directly within your projects.
+RepoTasks is a small desktop app for repo-aware notes and todos. It stores project notes in each repository as `NOTES.md`, so the tasks live beside the code instead of in a separate service.
+
+## Status
+
+RepoTasks is currently preparing its first `0.1.0` release. Until the first GitHub Release is published, install from source.
 
 ## Features
 
-- **Repo-Aware Notes & Todos**: Add notes and todos to your repositories. Data is stored directly within each project as a `NOTES.md` file, meaning your tasks stay with your code and on your disk.
-- **Quick Add**: Use the global shortcut `Ctrl+Alt+Space` to instantly bring up a Quick Add capture window from anywhere, type your thought or task, pick the target repo, and get back to work.
-- **Main Board**: A dedicated board view to manage all your imported repositories. Pin your favorites, filter tasks, and view quick stats (open tasks, completed tasks, notes).
-- **System Tray Integration**: Runs quietly in the background with a system tray icon, ensuring quick access to the board and capture views without keeping windows open.
-- **Quick Actions**: One-click actions to open a project's folder, edit the `NOTES.md` file directly in your preferred editor, or stop tracking a project without deleting its notes.
-- **Git Sync & Actions**: Automatically detects if your local `NOTES.md` file is out of sync with its remote tracking branch. Displays visually distinct warning banners for merge-conflict risks, unpushed local changes, or unstaged modifications. Easily push, commit, or pull notes directly via the "More Actions" menu.
-- **CLI Helper**: A standalone CLI binary (`rtasks.exe`) that lets you manage projects directly from your terminal. Easily add projects (`rtasks add .`), write notes (`rtasks note "text"`), toggle todos (`rtasks toggle <line>`), check sync status (`rtasks status`), and perform git push/pull actions without ever opening the GUI!
+- Repo-aware notes and todos stored in a local `NOTES.md` file.
+- Quick capture window with the global shortcut `Ctrl+Alt+Space`.
+- Board view for imported projects, pinned repos, filtering, and task counts.
+- System tray access for the board and capture window.
+- Quick actions to open a project folder, open `NOTES.md`, or remove a tracked project.
+- Git sync checks for uncommitted notes, unpushed notes, remote changes, and conflict risk.
+- Optional CLI helper named `rtasks` for adding projects, writing notes, toggling todos, and running note sync actions from a terminal.
 
-## Tech Stack
+## How Data Is Stored
 
-- **Frontend**: React (v19) + TypeScript, built with Vite.
-- **Backend/Desktop**: Tauri (v2) using Rust.
-- **System Integration**: Tauri plugins for global shortcuts, tray icons, dialogs, and native file openers.
+RepoTasks writes notes and todos to a `NOTES.md` file inside each tracked project. It also writes a small `.repotasks.json` metadata file in imported repositories so the desktop app and CLI can resolve the project consistently.
 
-## Getting Started
+RepoTasks does not require an account or hosted backend.
+
+## Desktop App
+
+After the first release, download the installer or package for your OS from GitHub Releases.
+
+The desktop app is the main supported interface. It manages tracked repositories, edits notes, shows sync status, and exposes Git actions from the UI.
+
+## CLI Helper
+
+The CLI is built from the same repository as the desktop app, but it is not automatically installed into your terminal `PATH` by the desktop app installer.
+
+For releases, `rtasks` should be treated as a separate GitHub Release asset:
+
+- `rtasks-windows-x64.exe`
+- `rtasks-macos-arm64`
+- `rtasks-macos-x64`
+- `rtasks-linux-x64`
+
+To use it, put the binary somewhere on your `PATH`.
+
+Common commands:
+
+```bash
+rtasks add .
+rtasks list
+rtasks note "Follow up on release checklist"
+rtasks note "Ship v0.1.0" --todo
+rtasks view
+rtasks toggle 12
+rtasks status
+rtasks pull
+rtasks push
+```
+
+If you run a command inside a tracked repository, `rtasks` uses that repo. You can also pass a project folder name or path to commands that accept one.
+
+## Development
 
 ### Prerequisites
 
-Ensure you have [Node.js](https://nodejs.org/), [pnpm](https://pnpm.io/), and [Rust](https://www.rust-lang.org/) installed, along with the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for your OS.
-- **Git Integration**: To make use of the passive Git sync checks, verify that the `git` command-line tool is installed and accessible in your system's `PATH`. If `git` is not available, the feature will disable itself cleanly without showing any warnings or errors.
+- Node.js
+- pnpm
+- Rust
+- Tauri v2 system prerequisites for your OS
+- Git on `PATH` for Git sync features
 
-### Installation
+### Install
 
-1. Clone the repository and navigate into it:
-   ```bash
-   git clone https://github.com/palmaxx/repotasks.git
-   cd repotasks
-   ```
+```bash
+git clone https://github.com/palmaxx/repotasks.git
+cd repotasks
+pnpm install
+```
 
-2. Install dependencies:
-   ```bash
-   pnpm install
-   ```
+### Run
 
-3. Run the development server:
-   ```bash
-   pnpm tauri dev
-   ```
+```bash
+pnpm tauri dev
+```
 
-4. Build for production:
-   ```bash
-   pnpm tauri build
-   ```
+### Check
+
+```bash
+pnpm lint
+pnpm build
+cargo test --manifest-path src-tauri/Cargo.toml
+```
+
+### Build
+
+Build the desktop app:
+
+```bash
+pnpm tauri build
+```
+
+Build only the CLI:
+
+```bash
+cargo build --manifest-path src-tauri/Cargo.toml --release --bin rtasks
+```
+
+The CLI binary is written to `src-tauri/target/release/rtasks` on macOS/Linux and `src-tauri/target/release/rtasks.exe` on Windows.
+
+## Release Checklist
+
+For a complete first GitHub release:
+
+- Pass `pnpm lint`, `pnpm build`, and `cargo test --manifest-path src-tauri/Cargo.toml`.
+- Build desktop packages for supported platforms.
+- Build `rtasks` binaries for supported platforms.
+- Publish a `v0.1.0` tag.
+- Create a GitHub Release with desktop app packages and separate `rtasks` assets.
+
+## Tech Stack
+
+- Tauri 2
+- Rust
+- React 19
+- TypeScript
+- Vite
+
+## License
+
+MIT

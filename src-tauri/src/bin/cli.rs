@@ -1,12 +1,11 @@
 use clap::{Parser, Subcommand};
-use directories::BaseDirs;
 use std::env;
 use std::path::{Path, PathBuf};
 use repotasks_lib::commands;
 use repotasks_lib::models::RepoConfig;
 
 #[derive(Parser)]
-#[command(name = "repotasks", version, about = "RepoTasks CLI helper")]
+#[command(name = "rtasks", version, about = "RepoTasks CLI helper")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,

@@ -87,7 +87,10 @@ export default function Board() {
   }
 
   const refreshRef = useRef(refresh);
-  refreshRef.current = refresh;
+
+  useEffect(() => {
+    refreshRef.current = refresh;
+  }, [refresh]);
 
   useEffect(() => {
     void refreshRef.current();
@@ -271,7 +274,7 @@ export default function Board() {
                     type="button"
                     onClick={() => {
                       void commitAndPush(selectedProject.id)
-                        .then(() => checkGit())
+                        .then(() => checkGit(selectedProject.id))
                         .catch((e) => setError(String(e)));
                     }}
                   >
