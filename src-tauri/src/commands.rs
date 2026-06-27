@@ -274,7 +274,10 @@ use std::os::windows::process::CommandExt;
 
 fn git_cmd() -> Command {
     let mut cmd = Command::new("git");
-    cmd.env("GIT_TERMINAL_PROMPT", "0");
+    cmd.env("GIT_TERMINAL_PROMPT", "0")
+        .env("GCM_INTERACTIVE", "false")
+        .env("GIT_ASKPASS", "")
+        .env("SSH_ASKPASS", "");
     #[cfg(target_os = "windows")]
     cmd.creation_flags(0x08000000);
     cmd
@@ -313,7 +316,7 @@ pub fn check_git_sync_status_core(config_dir: &Path, project_id: &str) -> Result
 
     // 2. Check if NOTES.md is actually tracked in Git.
     // If it's not tracked, we shouldn't trigger warnings about sync status.
-    let is_tracked = Command::new("git")
+    let is_tracked = git_cmd()
         .args(["ls-files", "--error-unmatch", NOTE_FILE])
         .current_dir(path)
         .output()
